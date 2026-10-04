@@ -1,0 +1,87 @@
+// Reference persistence schema for policygate.
+// Keeps policy statements as JSON (a policy is a document), while
+// role<->policy and membership<->role are relational join tables.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Principal {
+  id        String   @id
+  type      String // USER | AGENT | SERVICE
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  memberships    Membership[]
+  directPolicies DirectPolicy[]
+}
+
+model Account {
+  id        String       @id
+  name      String?
+  memberships Membership[]
+}
+
+model Membership {
+  id          String    @id @default(cuid())
+  principalId String
+  accountId   String
+  principal   Principal @relation(fields: [principalId], references: [id])
+  account     Account   @relation(fields: [accountId], references: [id])
+  roles       MembershipRole[]
+
+  @@unique([principalId, accountId])
+  @@index([principalId])
+}
+
+model MembershipRole {
+  membershipId String
+  roleId       String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, roleId])
+}
+
+model Role {
+  id                          String  @id
+  name                        String  @unique
+  systemDefault               Boolean @default(false)
+  unauthenticatedSystemDefault Boolean @default(false)
+  internalAgentOnly           Boolean @default(false)
+
+  policies    RolePolicy[]
+  memberships MembershipRole[]
+}
+
+model RolePolicy {
+  roleId   String
+  policyId String
+  role     Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  policy   Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, policyId])
+}
+
+model Policy {
+  id         String @id
+  name       String @unique
+  statements Json // PolicyStatement[]
+
+  roles          RolePolicy[]
+  directPolicies DirectPolicy[]
+}
+
+model DirectPolicy {
+  principalId String
+  policyId    String
+  principal   Principal @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  policy      Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@id([principalId, policyId])
+}

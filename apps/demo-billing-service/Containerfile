@@ -1,0 +1,26 @@
+# Build context = repo root.
+FROM docker.io/library/node:22-alpine AS deps
+WORKDIR /repo
+COPY package.json package-lock.json* ./
+COPY packages/policygate/package.json packages/policygate/
+COPY apps/authorization-service/package.json apps/authorization-service/
+COPY apps/demo-billing-service/package.json apps/demo-billing-service/
+RUN npm install --no-audit --no-fund
+
+FROM deps AS build
+WORKDIR /repo
+COPY tsconfig.json ./
+COPY packages/policygate packages/policygate
+COPY apps/demo-billing-service apps/demo-billing-service
+RUN npm run build -w policygate && npm run build -w demo-billing-service
+
+FROM docker.io/library/node:22-alpine
+WORKDIR /repo
+ENV NODE_ENV=production
+COPY --from=build /repo/node_modules node_modules
+COPY --from=build /repo/packages/policygate/dist packages/policygate/dist
+COPY --from=build /repo/packages/policygate/package.json packages/policygate/package.json
+COPY --from=build /repo/apps/demo-billing-service/dist apps/demo-billing-service/dist
+COPY --from=build /repo/apps/demo-billing-service/package.json apps/demo-billing-service/package.json
+EXPOSE 3200
+CMD ["node", "apps/demo-billing-service/dist/main.js"]
